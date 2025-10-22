@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cronograma de Desenvolvimento</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- jsPDF e html2canvas para exportar PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <style>
+        /* Estilos customizados */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f6;
+        }
+        
+        /* Estilo da barra de Gantt */
+        .gantt-bar {
+            position: absolute;
+            height: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: all 0.2s ease;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            overflow: hidden;
+            white-space: nowrap;
+            padding-left: 10px;
+            font-size: 12px;
+            font-weight: 500;
+            color: white;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        .gantt-bar:hover {
+            opacity: 0.8;
+            transform: translateY(-1px);
+        }
+
+        /* Marcadores de Início/Fim Real */
+        .gantt-actual-marker {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            z-index: 10;
+            margin-top: -6px; /* Centraliza verticalmente no ponto */
+            margin-left: -6px; /* Centraliza horizontalmente no ponto */
+            border: 2px solid #ffffff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            cursor: help;
+        }
+        .gantt-actual-marker.start {
+            background-color: #2ecc71; /* Verde */
+        }
+        .gantt-actual-marker.end {
+            background-color: #e74c3c; /* Vermelho */
+        }
+
+
+        /* Linha da tarefa na lista */
+        .task-row {
+            display: flex;
+            align-items: center;
+            height: 40px; /* Mesma altura da célula do Gantt */
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 14px;
+            cursor: pointer;
+            background-color: #ffffff;
+        }
+        .task-row:hover {
+            background-color: #f9fafb;
+        }
+        .task-row.is-group {
+            font-weight: 600;
+            background-color: #f9fafb;
+        }
+
+        /* Botão de expandir/recolher */
+        .toggle-expand {
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            margin-right: 5px;
+            border-radius: 4px;
+        }
+        .toggle-expand:hover {
+            background-color: #e5e7eb;
+        }
+
+        /* Linhas da grade do Gantt */
+        .gantt-grid-cell {
+            height: 40px;
+            border-bottom: 1px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+            position: relative; /* Para as barras se posicionarem */
+        }
+        .gantt-header-cell {
+            border-right: 1px solid #d1d5db;
+            border-bottom: 1px solid #d1d5db;
+            background-color: #f3f4f6;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        /* Destaque de fim de semana */
+        .gantt-grid-cell.weekend {
+            background-color: #fafafa;
+        }
+        .gantt-header-cell.weekend {
+            background-color: #e5e7eb;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-full mx-auto bg-white rounded-lg shadow-xl overflow-hidden">
+        <!-- Cabeçalho -->
+        <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-gray-800">Cronograma de Desenvolvimento</h1>
+            <div class="flex flex-wrap gap-2">
+                <button id="expandAllBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
+                    Expandir Tudo
+                </button>
+                <button id="collapseAllBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
+                    Colapsar Tudo
+                </button>
+                <button id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
+                    Adicionar Tarefa
+                </button>
+                <button id="exportPdfBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
+                    Exportar PDF
+                </button>
+            </div>
+        </div>
+
+        <!-- Container do Gantt -->
+        <div id="gantt-container" class="overflow-x-auto">
+            <div class="flex min-w-max" id="gantt-chart">
+                <!-- Eixo Y: Lista de Tarefas -->
+                <div class="w-1/3 min-w-[300px] md:w-1/4 lg:w-1/5 border-r border-gray-300 shadow-md z-10 bg-white">
+                    <!-- Cabeçalho da Lista de Tarefas -->
+                    <div class="h-16 flex items-center p-4 bg-gray-100 border-b border-gray-300">
+                        <span class="font-bold text-gray-700">Tarefas</span>
+                    </div>
+                    <!-- Corpo da Lista de Tarefas -->
+                    <div id="task-list"></div>
+                </div>
+
+                <!-- Eixo X: Gráfico -->
+                <div class="flex-1">
+                    <!-- Cabeçalho de Datas -->
+                    <div id="gantt-header" class="sticky top-0 bg-white z-10 shadow-sm">
+                        <!-- Renderizado pelo JS -->
+                    </div>
+                    <!-- Corpo do Gráfico -->
+                    <div id="gantt-grid" class="relative">
+                        <!-- Linhas da grade e barras renderizadas pelo JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="loading-pdf" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white p-6 rounded-lg shadow-xl">
+                <span class="text-lg font-medium text-gray-700">Exportando PDF...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Adicionar/Editar Tarefa -->
+    <div id="taskModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md relative"> <!-- Adicionado 'relative' -->
+            <!-- Botão Fechar (X) -->
+            <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors z-10">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <h2 id="modalTitle" class="text-xl font-bold mb-4">Editar Tarefa</h2>
+            <form id="taskForm">
+                <input type="hidden" id="taskId">
+                <input type="hidden" id="taskParentId">
+
+                <div class="mb-4">
+                    <label for="taskTitle" class="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                    <input type="text" id="taskTitle" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                
+                <div class="mb-4">
+                    <label for="taskDescription" class="block text-sm font-medium text-gray-700 mb-1">Descrição (Opcional)</label>
+                    <textarea id="taskDescription" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label for="taskStartDate" class="block text-sm font-medium text-gray-700 mb-1">Início Planejado</label>
+                        <input type="date" id="taskStartDate" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <div>
+                        <label for="taskEndDate" class="block text-sm font-medium text-gray-700 mb-1">Fim Planejado</label>
+                        <input type="date" id="taskEndDate" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label for="taskActualStartDate" class="block text-sm font-medium text-gray-700 mb-1">Início Real</label>
+                        <input type="date" id="taskActualStartDate" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="taskActualEndDate" class="block text-sm font-medium text-gray-700 mb-1">Fim Real</label>
+                        <input type="date" id="taskActualEndDate" class="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label for="taskColor" class="block text-sm font-medium text-gray-700 mb-1">Cor da Barra</label>
+                    <input type="color" id="taskColor" class="w-full h-10 border border-gray-300 rounded-lg cursor-pointer" value="#3b82f6">
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button" id="cancelBtn" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-150">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
+                        Salvar
+                    </button>
+                    <button type="button" id="addSubtaskBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
+                        Add Sub-tarefa
+                    </button>
+                    <button type="button" id="deleteBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150 hidden">
+                        Excluir
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // --- Constantes e Variáveis de Estado ---
+        const taskListEl = document.getElementById('task-list');
+        const ganttHeaderEl = document.getElementById('gantt-header');
+        const ganttGridEl = document.getElementById('gantt-grid');
+        const taskModal = document.getElementById('taskModal');
+        const taskForm = document.getElementById('taskForm');
+        const modalTitle = document.getElementById('modalTitle');
+        
+        const taskIdInput = document.getElementById('taskId');
+        const taskParentIdInput = document.getElementById('taskParentId');
+        const taskTitleInput = document.getElementById('taskTitle');
+        const taskDescriptionInput = document.getElementById('taskDescription');
+        const taskStartDateInput = document.getElementById('taskStartDate');
+        const taskEndDateInput = document.getElementById('taskEndDate');
+        const taskActualStartDateInput = document.getElementById('taskActualStartDate');
+        const taskActualEndDateInput = document.getElementById('taskActualEndDate');
+        const taskColorInput = document.getElementById('taskColor');
+
+        const cancelBtn = document.getElementById('cancelBtn');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const addSubtaskBtn = document.getElementById('addSubtaskBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const exportPdfBtn = document.getElementById('exportPdfBtn');
+        const loadingPdfEl = document.getElementById('loading-pdf');
+        const expandAllBtn = document.getElementById('expandAllBtn');
+        const collapseAllBtn = document.getElementById('collapseAllBtn');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        const DAY_WIDTH = 40; // Largura de cada dia em pixels
+        let projectStartDate = new Date('2025-10-22');
+        let projectEndDate = new Date('2025-10-22'); // Será recalculado
+        
+        // --- LocalStorage Keys ---
+        const ganttTasksKey = 'ganttChartTasks';
+        const ganttExpandedKey = 'ganttChartExpandedTasks';
+
+        let expandedTasks = new Set();
+        let tasks = [];
+
+        // --- Dados Iniciais ---
+        const initialData = [
+            {
+                id: '4', title: '4. CONTAS A PAGAR',
+                children: [
+                    { id: '4.1', title: '4.1 [LUCIANO]', color: '#f39c12', children: [
+                        { id: '4.1.1', title: '4.1.1 MAPEAR PROCEDURES (rever)', startDate: '2025-10-27', endDate: '2025-10-29', color: '#f1c40f' }
+                    ]},
+                    { id: '4.2', title: '4.2 [DEVS]', children: [
+                        { id: '4.2.1', title: '4.2.1 BACKEND', color: '#e67e22', children: [
+                            { id: '4.2.1.1', title: '4.2.1.1 Desenvolver rotas', startDate: '2025-10-30', endDate: '2025-11-12', color: '#e67e22', description: 'Desenvolvimento das rotas (estagiários, prazo maior).' },
+                            { id: '4.2.1.2', title: '4.2.1.2 DESENVOLVER TESTES E TESTAR', startDate: '2025-11-13', endDate: '2025-11-17', color: '#e67e22' },
+                            { id: '4.2.1.3', title: '4.2.1.3 VALIDAÇÃO', startDate: '2025-11-18', endDate: '2025-11-19', color: '#e67e22' },
+                            { id: '4.2.1.4', title: '4.2.1.4 AJUSTES FINAIS', startDate: '2025-11-20', endDate: '2025-11-21', color: '#e67e22' },
+                        ]},
+                        { id: '4.2.2', title: '4.2.2 FRONTEND', color: '#2980b9', children: [
+                            { id: '4.2.2.1', title: '4.2.2.1 PROTOTIPO', startDate: '2025-10-28', endDate: '2025-10-29', color: '#3498db' },
+                            { id: '4.2.2.2', title: '4.2.2.2 DESENVOLVER TELAS', startDate: '2025-10-30', endDate: '2025-11-05', color: '#3498db', description: 'Desenvolvimento das telas (sênior, prazo menor).' },
+                            { id: '4.2.2.3', title: '4.2.2.3 DESENVOLVER TESTES E TESTAR', startDate: '2025-11-18', endDate: '2025-11-19', color: '#3498db' },
+                            { id: '4.2.2.4', title: '4.2.2.4 VALIDAÇÃO', startDate: '2025-11-20', endDate: '2025-11-20', color: '#3498db' },
+                            { id: '4.2.2.5', title: '4.2.2.5 AJUSTES FINAIS', startDate: '2025-11-21', endDate: '2025-11-21', color: '#3498db' },
+                        ]}
+                    ]}
+                ]
+            },
+            {
+                id: '7', title: '7. REABASTECIMENTO',
+                children: [
+                    { id: '7.2', title: '7.2 [LUCIANO]', color: '#f39c12', children: [
+                        { id: '7.2.1', title: '7.2.1 Mapear procedures', startDate: '2025-10-22', endDate: '2025-10-24', color: '#f1c40f' }
+                    ]},
+                    { id: '7.1', title: '7.1 [DEVS]', children: [
+                        { id: '7.1.1', title: '7.1.1 BACKEND', color: '#e67e22', children: [
+                            { id: '7.1.1.1', title: '7.1.1.1 - Onboarding e Estudo SER', startDate: '2025-10-24', endDate: '2025-10-25', color: '#e67e22', description: 'Foco em entender a documentação e a arquitetura atual do sistema SER.' },
+                            { id: '7.1.1.2', title: '7.1.1.2 - Desenvolvimento das Rotas/API', startDate: '2025-10-27', endDate: '2025-11-07', color: '#e67e22', description: 'Criação dos endpoints (GET, POST, PUT, DELETE) necessários para o fluxo (estagiários).' },
+                            { id: '7.1.1.3', title: '7.1.1.3 - Desenvolver Testes e Testar', startDate: '2025-11-10', endDate: '2025-11-12', color: '#e67e22' },
+                            { id: '7.1.1.4', title: '7.1.1.4 - validação', startDate: '2025-11-13', endDate: '2025-11-14', color: '#e67e22' },
+                            { id: '7.1.1.5', title: '7.1.1.5 - ajustes finais', startDate: '2025-11-17', endDate: '2025-11-18', color: '#e67e22' },
+                        ]},
+                        { id: '7.1.2', title: '7.1.2 FRONTEND', color: '#2980b9', children: [
+                            { id: '7.1.2.1', title: '7.1.2.1 - Validação do Protótipo', startDate: '2025-10-23', endDate: '2025-10-24', color: '#3498db', description: 'Alinhamento final sobre as telas.' },
+                            { id: '7.1.2.2', title: '7.1.2.2 - Desenvolvimento das Telas', startDate: '2025-10-27', endDate: '2025-10-31', color: '#3498db', description: 'Desenvolvimento da interface (sênior).' },
+                            { id: '7.1.2.3', title: '7.1.2.3 - Integração com a API', startDate: '2025-11-10', endDate: '2025-11-14', color: '#3498db' },
+                            { id: '7.1.2.4', title: '7.1.2.4 - Desenvolver Testes e testar', startDate: '2025-11-17', endDate: '2025-11-18', color: '#3498db' },
+                            { id: '7.1.2.5', title: '7.1.2.5 - Validação', startDate: '2025-11-19', endDate: '2025-11-19', color: '#3498db' },
+                            { id: '7.1.2.6', title: '7.1.2.6 - Ajustes finais', startDate: '2025-11-20', endDate: '2025-11-20', color: '#3498db' },
+                        ]}
+                    ]}
+                ]
+            }
+        ];
+
+        // --- Funções do LocalStorage ---
+
+        /** Salva as tarefas no LocalStorage */
+        function saveTasksToLocalStorage() {
+            try {
+                localStorage.setItem(ganttTasksKey, JSON.stringify(tasks));
+            } catch (e) {
+                console.error("Erro ao salvar tarefas no LocalStorage:", e);
+            }
+        }
+
+        /** Salva o estado de expansão no LocalStorage */
+        function saveExpandedToLocalStorage() {
+            try {
+                localStorage.setItem(ganttExpandedKey, JSON.stringify(Array.from(expandedTasks)));
+            } catch (e) {
+                console.error("Erro ao salvar estado de expansão no LocalStorage:", e);
+            }
+        }
+
+        /** Carrega as tarefas do LocalStorage */
+        function loadTasksFromLocalStorage() {
+            try {
+                const storedTasks = localStorage.getItem(ganttTasksKey);
+                if (storedTasks) {
+                    return JSON.parse(storedTasks);
+                }
+            } catch (e) {
+                console.error("Erro ao carregar tarefas do LocalStorage:", e);
+            }
+            return initialData; // Retorna os dados iniciais se não houver nada salvo
+        }
+
+        /** Carrega o estado de expansão do LocalStorage */
+        function loadExpandedFromLocalStorage() {
+            try {
+                const storedExpanded = localStorage.getItem(ganttExpandedKey);
+                if (storedExpanded) {
+                    return new Set(JSON.parse(storedExpanded));
+                }
+            } catch (e) {
+                console.error("Erro ao carregar estado de expansão do LocalStorage:", e);
+            }
+            
+            // Se não houver nada salvo, define um padrão (expande os dois primeiros níveis)
+            const defaultExpanded = new Set();
+            const initialTasks = tasks.length > 0 ? tasks : initialData; // Usa as tarefas já carregadas ou os dados iniciais
+            initialTasks.forEach(t => {
+                defaultExpanded.add(t.id);
+                if (t.children) {
+                    t.children.forEach(c => defaultExpanded.add(c.id));
+                }
+            });
+            return defaultExpanded;
+        }
+
+
+        // --- Funções Auxiliares de Data ---
+        
+        /** Diferença em dias entre duas datas (ignorando hora) */
+        function diffDays(date1, date2) {
+            const d1 = new Date(date1.getFullYear(), date1.getMonth(), date1.getDate());
+            const d2 = new Date(date2.getFullYear(), date2.getMonth(), date2.getDate());
+            return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+        }
+
+        /** Adiciona dias a uma data */
+        function addDays(date, days) {
+            const result = new Date(date);
+            result.setDate(result.getDate() + days);
+            return result;
+        }
+        
+        /** Formata data para YYYY-MM-DD */
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        /** Analisa data YYYY-MM-DD para objeto Date (lidando com fuso horário) */
+        function parseDate(dateString) {
+            if (!dateString) return null; // Adicionado para lidar com datas nulas/undefined
+            const [year, month, day] = dateString.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+
+        // --- Funções de Processamento de Dados ---
+
+        /** Inicializa e processa os dados (calcula datas de grupos) */
+        function processTasks(taskArray) {
+            let minDate = null; // Início dinâmico
+            let maxDate = null; // Fim dinâmico
+
+            function traverse(tasks) {
+                let groupMin = null;
+                let groupMax = null;
+
+                for (const task of tasks) {
+                    if (!task.id) task.id = crypto.randomUUID();
+                    if (!task.color) task.color = '#3b82f6'; // Cor padrão
+                    
+                    if (task.children && task.children.length > 0) {
+                        const [childMin, childMax] = traverse(task.children);
+                        task.startDate = childMin ? formatDate(childMin) : null;
+                        task.endDate = childMax ? formatDate(childMax) : null;
+                    }
+
+                    // Apenas tarefas-filhas (sem children) definem o min/max do projeto
+                    if (!task.children || task.children.length === 0) {
+                        if (task.startDate) {
+                            const sDate = parseDate(task.startDate);
+                            if (sDate) {
+                                if (!minDate || sDate < minDate) minDate = sDate;
+                                if (!groupMin || sDate < groupMin) groupMin = sDate;
+                            }
+                        }
+                        if (task.endDate) {
+                            const eDate = parseDate(task.endDate);
+                            if (eDate) {
+                                if (!maxDate || eDate > maxDate) maxDate = eDate;
+                                if (!groupMax || eDate > groupMax) groupMax = eDate;
+                            }
+                        }
+                    } else {
+                        // Para tarefas-pai, apenas usamos para o groupMin/Max
+                         if (task.startDate) {
+                            const sDate = parseDate(task.startDate);
+                             if (sDate && (!groupMin || sDate < groupMin)) groupMin = sDate;
+                         }
+                         if (task.endDate) {
+                            const eDate = parseDate(task.endDate);
+                             if (eDate && (!groupMax || eDate > groupMax)) groupMax = eDate;
+                         }
+                    }
+                }
+                return [groupMin, groupMax];
+            }
+
+            traverse(taskArray);
+            
+            // Define o início do projeto com base na data mínima encontrada (ou 22/10 como fallback) + margem de 1 dia
+            if (!minDate) minDate = new Date('2025-10-22'); // Fallback se não houver datas
+            projectStartDate = addDays(minDate, -1); 
+            
+            // Define o fim do projeto com base na data máxima encontrada + margem de 1 dia
+            if (!maxDate) maxDate = new Date(minDate); // Garante que maxDate não seja nulo
+            projectEndDate = addDays(maxDate, 1);
+            
+            return taskArray;
+        }
+
+        /** Encontra uma tarefa por ID */
+        function findTaskById(id, taskArray = tasks) {
+            for (const task of taskArray) {
+                if (task.id === id) return task;
+                if (task.children) {
+                    const found = findTaskById(id, task.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        /** Exclui uma tarefa por ID */
+        function deleteTaskById(id, taskArray = tasks) {
+             for (let i = 0; i < taskArray.length; i++) {
+                if (taskArray[i].id === id) {
+                    taskArray.splice(i, 1);
+                    return true;
+                }
+                if (taskArray[i].children) {
+                    if (deleteTaskById(id, taskArray[i].children)) return true;
+                }
+            }
+            return false;
+        }
+
+        /** Adiciona uma nova tarefa */
+        function addNewTask(parentId, newTask) {
+            if (!parentId) {
+                tasks.push(newTask);
+                return;
+            }
+            const parent = findTaskById(parentId);
+            if (parent) {
+                if (!parent.children) parent.children = [];
+                parent.children.push(newTask);
+                expandedTasks.add(parentId); // Expande o pai
+                saveExpandedToLocalStorage(); // Salva o novo estado de expansão
+            }
+        }
+
+        // --- Funções de Renderização ---
+
+        /** Renderiza todo o gráfico */
+        function render() {
+            // Limpa containers
+            taskListEl.innerHTML = '';
+            ganttHeaderEl.innerHTML = '';
+            ganttGridEl.innerHTML = '';
+
+            renderGanttHeader();
+
+            const flatTaskList = [];
+            function flattenTasks(taskArray, level = 0, parentVisible = true) {
+                taskArray.forEach(task => {
+                    const isVisible = parentVisible;
+                    if (isVisible) {
+                        flatTaskList.push({ ...task, level });
+                    }
+                    if (task.children && task.children.length > 0) {
+                        flattenTasks(task.children, level + 1, isVisible && expandedTasks.has(task.id));
+                    }
+                });
+            }
+
+            flattenTasks(tasks);
+            renderTaskList(flatTaskList);
+            renderGanttGrid(flatTaskList);
+        }
+
+        /** Renderiza o cabeçalho de datas (Eixo X) */
+        function renderGanttHeader() {
+            const monthsEl = document.createElement('div');
+            monthsEl.className = 'flex';
+            const daysEl = document.createElement('div');
+            daysEl.className = 'flex';
+
+            let currentDate = new Date(projectStartDate);
+            const totalDays = diffDays(projectStartDate, projectEndDate) + 1;
+            
+            let currentMonth = -1;
+            let monthCell;
+            let monthDayCount = 0;
+            
+            for (let i = 0; i < totalDays; i++) {
+                const day = currentDate.getDate();
+                const month = currentDate.getMonth();
+                const weekDay = currentDate.getDay(); // 0 = Dom, 6 = Sáb
+                const isWeekend = weekDay === 0 || weekDay === 6;
+
+                // Célula do Dia
+                const dayCell = document.createElement('div');
+                dayCell.className = `flex-shrink-0 flex items-center justify-center gantt-header-cell ${isWeekend ? 'weekend' : ''}`;
+                dayCell.style.width = `${DAY_WIDTH}px`;
+                dayCell.style.height = '2rem'; // Metade da altura total do cabeçalho
+                dayCell.textContent = day;
+                daysEl.appendChild(dayCell);
+
+                // Célula do Mês
+                if (month !== currentMonth) {
+                    if (monthCell) {
+                        monthCell.style.width = `${monthDayCount * DAY_WIDTH}px`;
+                    }
+                    currentMonth = month;
+                    monthDayCount = 0;
+                    monthCell = document.createElement('div');
+                    monthCell.className = 'flex-shrink-0 flex items-center justify-center gantt-header-cell';
+                    monthCell.style.height = '2rem'; // Metade da altura total
+                    monthCell.textContent = currentDate.toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+                    monthsEl.appendChild(monthCell);
+                }
+                monthDayCount++;
+
+                currentDate = addDays(currentDate, 1);
+            }
+            // Define a largura do último mês
+            if (monthCell) {
+                monthCell.style.width = `${monthDayCount * DAY_WIDTH}px`;
+            }
+
+            ganttHeaderEl.appendChild(monthsEl);
+            ganttHeaderEl.appendChild(daysEl);
+            ganttHeaderEl.style.height = '4rem'; // Altura total
+        }
+
+        /** Renderiza a lista de tarefas (Eixo Y) */
+        function renderTaskList(flatTaskList) {
+            flatTaskList.forEach(task => {
+                const row = document.createElement('div');
+                row.className = `task-row ${task.children && task.children.length > 0 ? 'is-group' : ''}`;
+                row.style.paddingLeft = `${task.level * 20 + 10}px`;
+                row.dataset.taskId = task.id;
+
+                // Botão de expandir
+                if (task.children && task.children.length > 0) {
+                    const toggle = document.createElement('span');
+                    toggle.className = 'toggle-expand';
+                    toggle.innerHTML = expandedTasks.has(task.id) ? '&#9660;' : '&#9654;'; // Seta para baixo ou lado
+                    toggle.onclick = (e) => {
+                        e.stopPropagation(); // Impede que o clique abra o modal
+                        toggleTask(task.id);
+                    };
+                    row.appendChild(toggle);
+                } else {
+                    // Espaçador para alinhar
+                    const spacer = document.createElement('span');
+                    spacer.className = 'inline-block';
+                    spacer.style.width = '25px';
+                    row.appendChild(spacer);
+                }
+
+                const title = document.createElement('span');
+                title.textContent = task.title;
+                row.appendChild(title);
+
+                // Evento de clique para editar
+                row.onclick = () => openModal(task.id);
+                taskListEl.appendChild(row);
+            });
+        }
+        
+        /** Renderiza a grade e as barras do Gantt */
+        function renderGanttGrid(flatTaskList) {
+            const totalDays = diffDays(projectStartDate, projectEndDate) + 1;
+            const gridWidth = totalDays * DAY_WIDTH;
+            ganttGridEl.style.width = `${gridWidth}px`;
+
+            let gridHTML = '';
+            let barsHTML = '';
+
+            let currentDateForGrid = new Date(projectStartDate);
+            
+            flatTaskList.forEach((task, index) => {
+                const top = index * 40; // 40px de altura por linha
+                let rowHTML = '<div class="flex">';
+                
+                // Cria as células da grade para esta linha
+                for(let i = 0; i < totalDays; i++) {
+                    const weekDay = currentDateForGrid.getDay();
+                    const isWeekend = weekDay === 0 || weekDay === 6;
+                    rowHTML += `<div class="flex-shrink-0 gantt-grid-cell ${isWeekend ? 'weekend' : ''}" style="width: ${DAY_WIDTH}px;"></div>`;
+                    currentDateForGrid = addDays(currentDateForGrid, 1);
+                }
+                rowHTML += '</div>';
+                gridHTML += rowHTML;
+                currentDateForGrid = new Date(projectStartDate); // Reseta a data para a próxima linha
+
+                // Cria a barra da tarefa (Planejado)
+                if (task.startDate && task.endDate) {
+                    const sDate = parseDate(task.startDate);
+                    const eDate = parseDate(task.endDate);
+                    
+                    if (sDate && eDate && eDate >= sDate) { // Validação
+                        const left = diffDays(projectStartDate, sDate) * DAY_WIDTH;
+                        const duration = diffDays(sDate, eDate) + 1;
+                        const width = duration * DAY_WIDTH;
+
+                        barsHTML += `
+                            <div 
+                                class="gantt-bar" 
+                                style="
+                                    top: ${top + 8}px; 
+                                    left: ${left}px; 
+                                    width: ${width}px; 
+                                    background-color: ${task.color};
+                                "
+                                title="${task.title}\nPlanejado: ${task.startDate} a ${task.endDate}\n${task.description || ''}"
+                                data-task-id="${task.id}"
+                                onclick="openModal('${task.id}')"
+                            >
+                                ${task.title}
+                            </div>
+                        `;
+                    }
+                }
+
+                // Cria o marcador de Início Real
+                if (task.actualStartDate) {
+                    const actualSDate = parseDate(task.actualStartDate);
+                    if (actualSDate) { // Validação
+                        const actualStartLeft = diffDays(projectStartDate, actualSDate) * DAY_WIDTH;
+                        barsHTML += `
+                            <div 
+                                class="gantt-actual-marker start"
+                                style="top: ${top + 20}px; left: ${actualStartLeft + (DAY_WIDTH / 2)}px;"
+                                title="Início Real: ${task.actualStartDate}"
+                            ></div>
+                        `;
+                    }
+                }
+
+                // Cria o marcador de Fim Real
+                if (task.actualEndDate) {
+                    const actualEDate = parseDate(task.actualEndDate);
+                    if (actualEDate) { // Validação
+                        const actualEndLeft = diffDays(projectStartDate, actualEDate) * DAY_WIDTH;
+                        barsHTML += `
+                            <div 
+                                class="gantt-actual-marker end"
+                                style="top: ${top + 20}px; left: ${actualEndLeft + (DAY_WIDTH / 2)}px;"
+                                title="Fim Real: ${task.actualEndDate}"
+                            ></div>
+                        `;
+                    }
+                }
+            });
+            
+            ganttGridEl.innerHTML = gridHTML + barsHTML;
+        }
+        
+        // --- Funções de Interação (Event Handlers) ---
+
+        /** Expande todas as tarefas */
+        function expandAll() {
+            function traverse(taskArray) {
+                taskArray.forEach(task => {
+                    if (task.children && task.children.length > 0) {
+                        expandedTasks.add(task.id);
+                        traverse(task.children);
+                    }
+                });
+            }
+            traverse(tasks);
+            render();
+            saveExpandedToLocalStorage(); // Salva estado
+        }
+
+        /** Colapsa todas as tarefas */
+        function collapseAll() {
+            expandedTasks.clear();
+            render();
+            saveExpandedToLocalStorage(); // Salva estado
+        }
+
+        /** Abre ou fecha uma tarefa pai */
+        function toggleTask(taskId) {
+            if (expandedTasks.has(taskId)) {
+                expandedTasks.delete(taskId);
+            } else {
+                expandedTasks.add(taskId);
+            }
+            render();
+            saveExpandedToLocalStorage(); // Salva estado
+        }
+
+        /** Abre o modal para edição ou criação */
+        function openModal(taskId = null, parentId = null) {
+            taskForm.reset();
+            deleteBtn.classList.add('hidden');
+            addSubtaskBtn.classList.add('hidden');
+            
+            if (taskId) {
+                // Editando tarefa existente
+                const task = findTaskById(taskId);
+                if (!task) return;
+                
+                modalTitle.textContent = 'Editar Tarefa';
+                taskIdInput.value = task.id;
+                taskParentIdInput.value = ''; // O pai não é editável aqui
+                taskTitleInput.value = task.title;
+                taskDescriptionInput.value = task.description || '';
+                taskStartDateInput.value = task.startDate || '';
+                taskEndDateInput.value = task.endDate || '';
+                taskActualStartDateInput.value = task.actualStartDate || '';
+                taskActualEndDateInput.value = task.actualEndDate || '';
+                taskColorInput.value = task.color || '#3b82f6';
+
+                // Só pode adicionar sub-tarefa se for um grupo (ou se for tarefa simples)
+                addSubtaskBtn.classList.remove('hidden');
+                deleteBtn.classList.remove('hidden');
+                
+                const isGroup = task.children && task.children.length > 0;
+                // Desabilita datas planejadas se for um grupo (calculado automaticamente)
+                taskStartDateInput.disabled = isGroup;
+                taskEndDateInput.disabled = isGroup;
+                // Desabilita datas reais se for um grupo
+                taskActualStartDateInput.disabled = isGroup;
+                taskActualEndDateInput.disabled = isGroup;
+
+
+            } else {
+                // Criando nova tarefa
+                modalTitle.textContent = 'Adicionar Nova Tarefa';
+                taskIdInput.value = '';
+                taskParentIdInput.value = parentId || '';
+                
+                // Habilita todos os campos para nova tarefa
+                taskStartDateInput.disabled = false;
+                taskEndDateInput.disabled = false;
+                taskActualStartDateInput.disabled = false;
+                taskActualEndDateInput.disabled = false;
+                
+                if (parentId) {
+                    modalTitle.textContent = 'Adicionar Sub-tarefa';
+                }
+            }
+
+            taskModal.classList.remove('hidden');
+        }
+
+        /** Fecha o modal */
+        function closeModal() {
+            taskModal.classList.add('hidden');
+        }
+
+        /** Salva a tarefa (nova ou editada) */
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            
+            const id = taskIdInput.value;
+            const parentId = taskParentIdInput.value;
+            
+            const taskData = {
+                id: id || crypto.randomUUID(),
+                title: taskTitleInput.value,
+                description: taskDescriptionInput.value,
+                startDate: taskStartDateInput.value,
+                endDate: taskEndDateInput.value,
+                actualStartDate: taskActualStartDateInput.value || null, // Salva null se vazio
+                actualEndDate: taskActualEndDateInput.value || null, // Salva null se vazio
+                color: taskColorInput.value,
+            };
+            
+            // Validação de datas
+            if (taskStartDateInput.value && taskEndDateInput.value) {
+                if (parseDate(taskEndDateInput.value) < parseDate(taskStartDateInput.value)) {
+                    // Usei console.warn em vez de alert
+                    console.warn("A data final planejada não pode ser anterior à data inicial.");
+                    return; 
+                }
+            }
+            if (taskActualStartDateInput.value && taskActualEndDateInput.value) {
+                if (parseDate(taskActualEndDateInput.value) < parseDate(taskActualStartDateInput.value)) {
+                    console.warn("A data final real não pode ser anterior à data inicial.");
+                    return; 
+                }
+            }
+
+            if (id) {
+                // Atualiza tarefa existente
+                const task = findTaskById(id);
+                if (task) {
+                    const hadChildren = task.children && task.children.length > 0;
+                    Object.assign(task, taskData);
+                    // Se era um grupo, não sobrescrever children
+                    if (hadChildren) {
+                        task.startDate = null; // Deixa o processTasks recalcular
+                        task.endDate = null;
+                        task.actualStartDate = null;
+                        task.actualEndDate = null;
+                    }
+                }
+            } else {
+                // Adiciona nova tarefa
+                addNewTask(parentId, taskData);
+            }
+
+            tasks = processTasks(tasks); // RECALCULA AS DATAS AQUI
+            saveTasksToLocalStorage(); // Salva tarefas
+            render();
+            closeModal();
+        }
+
+        /** Adiciona uma sub-tarefa */
+        function handleAddSubtask() {
+            const parentId = taskIdInput.value; // O ID da tarefa atual se torna o pai
+            closeModal();
+            openModal(null, parentId); // Abre o modal para criar uma nova tarefa com o parentId
+        }
+
+        /** Exclui uma tarefa */
+        function handleDelete() {
+            const id = taskIdInput.value;
+            // Usei console.warn em vez de confirm
+            console.warn(`Tentativa de exclusão da tarefa: ${id}. A exclusão deve ser confirmada.`);
+            
+            // Simulação de confirmação (em um app real, usar um modal de confirmação)
+            const confirmed = true; // Simula a confirmação
+            
+            if (confirmed && id) {
+                if (deleteTaskById(id)) {
+                    tasks = processTasks(tasks); // RECALCULA AS DATAS AQUI
+                    saveTasksToLocalStorage(); // Salva tarefas
+                    render();
+                    closeModal();
+                } else {
+                    console.error("Não foi possível excluir a tarefa.");
+                }
+            }
+        }
+
+        /** Exporta para PDF */
+        async function handleExportPDF() {
+            loadingPdfEl.classList.remove('hidden');
+            const { jsPDF } = window.jspdf;
+            
+            const chartEl = document.getElementById('gantt-chart');
+            const originalWidth = chartEl.style.width;
+            
+            // Força a largura total para o canvas capturar tudo
+            chartEl.style.width = `${chartEl.scrollWidth}px`;
+            
+            try {
+                const canvas = await html2canvas(chartEl, {
+                    scale: 2, // Aumenta a resolução
+                    useCORS: true,
+                    scrollX: 0,
+                    scrollY: 0,
+                    windowWidth: chartEl.scrollWidth,
+                    windowHeight: chartEl.scrollHeight
+                });
+                
+                const imgData = canvas.toDataURL('image/png');
+                
+                // Dimensões do PDF (paisagem)
+                const pdfWidth = canvas.width / 2; // Dividir pela escala
+                const pdfHeight = canvas.height / 2;
+                const orientation = pdfWidth > pdfHeight ? 'l' : 'p';
+                
+                const pdf = new jsPDF({
+                    orientation: orientation,
+                    unit: 'px',
+                    format: [pdfWidth, pdfHeight]
+                });
+
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                pdf.save('cronograma_desenvolvimento.pdf');
+
+            } catch (error) {
+                console.error('Erro ao gerar PDF:', error);
+            } finally {
+                // Restaura a largura original
+                chartEl.style.width = originalWidth;
+                loadingPdfEl.classList.add('hidden');
+            }
+        }
+
+        // --- Inicialização e Event Listeners ---
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            tasks = loadTasksFromLocalStorage(); // Carrega tarefas primeiro
+            tasks = processTasks(tasks); // Processa (calcula datas de grupos)
+            
+            // Salva tarefas processadas (caso seja a primeira vez e tenha carregado initialData)
+            // Isso garante que os dados calculados (datas de grupos) sejam salvos.
+            saveTasksToLocalStorage(); 
+            
+            expandedTasks = loadExpandedFromLocalStorage(); // Carrega expansão (pode depender de 'tasks' para o padrão)
+            saveExpandedToLocalStorage(); // Salva o estado de expansão (caso seja o padrão)
+
+            render();
+        });
+
+        // Listener para fechar modal com 'Esc'
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !taskModal.classList.contains('hidden')) {
+                closeModal();
+            }
+        });
+
+        // Listener para fechar modal ao clicar fora
+        taskModal.addEventListener('click', (e) => {
+            if (e.target === taskModal) {
+                closeModal();
+            }
+        });
+
+        taskForm.addEventListener('submit', handleFormSubmit);
+        cancelBtn.addEventListener('click', closeModal);
+        closeModalBtn.addEventListener('click', closeModal); // Listener para o botão 'X'
+        addTaskBtn.addEventListener('click', () => openModal());
+        addSubtaskBtn.addEventListener('click', handleAddSubtask);
+        deleteBtn.addEventListener('click', handleDelete);
+        exportPdfBtn.addEventListener('click', handleExportPDF);
+        expandAllBtn.addEventListener('click', expandAll);
+        collapseAllBtn.addEventListener('click', collapseAll);
+
+    </script>
+</body>
+</html>
+
