@@ -123,7 +123,16 @@
     <div class="max-w-full mx-auto bg-white rounded-lg shadow-xl overflow-hidden">
         <!-- Cabeçalho -->
         <div class="p-4 border-b border-gray-200 flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-gray-800">Cronograma de Desenvolvimento</h1>
+            <!-- Título e Botão de Trava -->
+            <div class="flex items-center gap-4">
+                <h1 class="text-2xl font-bold text-gray-800">Cronograma de Desenvolvimento</h1>
+                <!-- Botão de Trava/Destrava -->
+                <button id="lockToggleBtn" class="p-2 rounded-lg shadow transition duration-150">
+                    <!-- SVG será inserido pelo JS -->
+                </button>
+            </div>
+            
+            <!-- Botões de Ação -->
             <div class="flex flex-wrap gap-2">
                 <button id="expandAllBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
                     Expandir Tudo
@@ -131,7 +140,7 @@
                 <button id="collapseAllBtn" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
                     Colapsar Tudo
                 </button>
-                <button id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
+                <button id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150 hidden"> <!-- Começa oculto -->
                     Adicionar Tarefa
                 </button>
                 <button id="exportPdfBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow transition duration-150">
@@ -268,6 +277,7 @@
         const expandAllBtn = document.getElementById('expandAllBtn');
         const collapseAllBtn = document.getElementById('collapseAllBtn');
         const closeModalBtn = document.getElementById('closeModalBtn');
+        const lockToggleBtn = document.getElementById('lockToggleBtn'); // Botão de trava
 
         const DAY_WIDTH = 40; // Largura de cada dia em pixels
         let projectStartDate = new Date('2025-10-22');
@@ -276,6 +286,18 @@
         // --- LocalStorage Keys ---
         const ganttTasksKey = 'ganttChartTasks';
         const ganttExpandedKey = 'ganttChartExpandedTasks';
+
+        // --- Configuração de Bloqueio ---
+        const EDIT_PASSWORD = 'admin'; // Defina sua senha aqui
+        window.isLocked = true; // Começa travado. 'window.' para acesso inline.
+        
+        // SVGs para os ícones
+        const lockIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>`;
+        const unlockIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>`;
 
         let expandedTasks = new Set();
         let tasks = [];
@@ -638,7 +660,11 @@
                 row.appendChild(title);
 
                 // Evento de clique para editar
-                row.onclick = () => openModal(task.id);
+                row.onclick = () => {
+                    if (!window.isLocked) { // VERIFICA SE ESTÁ TRAVADO
+                        openModal(task.id);
+                    }
+                };
                 taskListEl.appendChild(row);
             });
         }
@@ -690,7 +716,7 @@
                                 "
                                 title="${task.title}\nPlanejado: ${task.startDate} a ${task.endDate}\n${task.description || ''}"
                                 data-task-id="${task.id}"
-                                onclick="openModal('${task.id}')"
+                                onclick="window.handleBarClick('${task.id}')"
                             >
                                 ${task.title}
                             </div>
@@ -734,6 +760,49 @@
         
         // --- Funções de Interação (Event Handlers) ---
 
+        /** Atualiza a UI com base no estado de 'isLocked' */
+        function updateLockUI() {
+            if (window.isLocked) {
+                lockToggleBtn.innerHTML = lockIconSVG;
+                lockToggleBtn.title = "Desbloquear para editar";
+                lockToggleBtn.classList.remove('bg-green-200', 'text-green-800');
+                lockToggleBtn.classList.add('bg-red-200', 'text-red-800');
+                addTaskBtn.classList.add('hidden');
+            } else {
+                lockToggleBtn.innerHTML = unlockIconSVG;
+                lockToggleBtn.title = "Bloquear edição";
+                lockToggleBtn.classList.remove('bg-red-200', 'text-red-800');
+                lockToggleBtn.classList.add('bg-green-200', 'text-green-800');
+                addTaskBtn.classList.remove('hidden');
+            }
+        }
+
+        /** Alterna o estado de bloqueio */
+        function toggleLockState() {
+            if (window.isLocked) {
+                // Tentar desbloquear
+                const password = prompt("Digite a senha para desbloquear a edição:");
+                if (password === EDIT_PASSWORD) {
+                    window.isLocked = false;
+                    console.log("Edição desbloqueada.");
+                } else if (password !== null) { // Só mostra erro se não for 'cancelar'
+                    console.warn("Senha incorreta!");
+                }
+            } else {
+                // Bloquear (sem senha)
+                window.isLocked = true;
+                console.log("Edição bloqueada.");
+            }
+            updateLockUI();
+        }
+
+        /** Handler global para clique na barra (usado no HTML inline) */
+        window.handleBarClick = (taskId) => {
+            if (!window.isLocked) { // VERIFICA SE ESTÁ TRAVADO
+                openModal(taskId);
+            }
+        };
+
         /** Expande todas as tarefas */
         function expandAll() {
             function traverse(taskArray) {
@@ -769,6 +838,9 @@
 
         /** Abre o modal para edição ou criação */
         function openModal(taskId = null, parentId = null) {
+            // A verificação de 'isLocked' é feita ANTES de chamar openModal
+            // (nos event handlers 'row.onclick', 'window.handleBarClick', 'addTaskBtn.onclick')
+            
             taskForm.reset();
             deleteBtn.classList.add('hidden');
             addSubtaskBtn.classList.add('hidden');
@@ -831,6 +903,13 @@
         function handleFormSubmit(e) {
             e.preventDefault();
             
+            // Verificação extra caso o usuário tenha bloqueado com o modal aberto
+            if (window.isLocked) {
+                console.warn("A edição foi bloqueada. Não é possível salvar.");
+                closeModal();
+                return;
+            }
+
             const id = taskIdInput.value;
             const parentId = taskParentIdInput.value;
             
@@ -887,6 +966,10 @@
 
         /** Adiciona uma sub-tarefa */
         function handleAddSubtask() {
+            if (window.isLocked) { // Verificação
+                console.warn("A edição está bloqueada. Não é possível adicionar sub-tarefa.");
+                return;
+            }
             const parentId = taskIdInput.value; // O ID da tarefa atual se torna o pai
             closeModal();
             openModal(null, parentId); // Abre o modal para criar uma nova tarefa com o parentId
@@ -894,6 +977,11 @@
 
         /** Exclui uma tarefa */
         function handleDelete() {
+            if (window.isLocked) { // Verificação
+                console.warn("A edição está bloqueada. Não é possível excluir.");
+                return;
+            }
+
             const id = taskIdInput.value;
             // Usei console.warn em vez de confirm
             console.warn(`Tentativa de exclusão da tarefa: ${id}. A exclusão deve ser confirmada.`);
@@ -965,13 +1053,12 @@
             tasks = loadTasksFromLocalStorage(); // Carrega tarefas primeiro
             tasks = processTasks(tasks); // Processa (calcula datas de grupos)
             
-            // Salva tarefas processadas (caso seja a primeira vez e tenha carregado initialData)
-            // Isso garante que os dados calculados (datas de grupos) sejam salvos.
             saveTasksToLocalStorage(); 
             
             expandedTasks = loadExpandedFromLocalStorage(); // Carrega expansão (pode depender de 'tasks' para o padrão)
             saveExpandedToLocalStorage(); // Salva o estado de expansão (caso seja o padrão)
 
+            updateLockUI(); // Define o estado visual inicial do cadeado
             render();
         });
 
@@ -992,12 +1079,21 @@
         taskForm.addEventListener('submit', handleFormSubmit);
         cancelBtn.addEventListener('click', closeModal);
         closeModalBtn.addEventListener('click', closeModal); // Listener para o botão 'X'
-        addTaskBtn.addEventListener('click', () => openModal());
+        
+        // Listeners protegidos pelo 'isLocked'
+        addTaskBtn.addEventListener('click', () => {
+            if (!window.isLocked) {
+                openModal();
+            }
+        });
         addSubtaskBtn.addEventListener('click', handleAddSubtask);
         deleteBtn.addEventListener('click', handleDelete);
+        
+        // Listeners que funcionam sempre
         exportPdfBtn.addEventListener('click', handleExportPDF);
         expandAllBtn.addEventListener('click', expandAll);
         collapseAllBtn.addEventListener('click', collapseAll);
+        lockToggleBtn.addEventListener('click', toggleLockState); // Listener do botão de trava
 
     </script>
 </body>
